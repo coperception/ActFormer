@@ -4,6 +4,7 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import pdb
 from projects.mmdet3d_plugin.models.utils.bricks import run_time
 from .multi_scale_deformable_attn_function import MultiScaleDeformableAttnFunction_fp32
 from mmcv.ops.multi_scale_deform_attn import multi_scale_deformable_attn_pytorch
@@ -184,6 +185,7 @@ class TemporalSelfAttention(BaseModule):
         if identity is None:
             identity = query
         if query_pos is not None:
+            #pdb.set_trace()
             query = query + query_pos
         if not self.batch_first:
             # change to (bs, num_query ,embed_dims)

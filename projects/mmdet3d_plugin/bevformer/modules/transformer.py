@@ -4,6 +4,7 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import pdb
 import numpy as np
 import torch
 import torch.nn as nn
@@ -110,6 +111,7 @@ class PerceptionTransformer(BaseModule):
             grid_length=[0.512, 0.512],
             bev_pos=None,
             prev_bev=None,
+            test=False,
             **kwargs):
         """
         obtain bev features.
@@ -118,14 +120,14 @@ class PerceptionTransformer(BaseModule):
         bs = mlvl_feats[0].size(0)
         bev_queries = bev_queries.unsqueeze(1).repeat(1, bs, 1)
         bev_pos = bev_pos.flatten(2).permute(2, 0, 1)
-
+        #pdb.set_trace()
         # obtain rotation angle and shift with ego motion
-        delta_x = np.array([each['can_bus'][0]
+        delta_x = np.array([each['can_bus'][0][0]
                            for each in kwargs['img_metas']])
-        delta_y = np.array([each['can_bus'][1]
+        delta_y = np.array([each['can_bus'][0][1]
                            for each in kwargs['img_metas']])
         ego_angle = np.array(
-            [each['can_bus'][-2] / np.pi * 180 for each in kwargs['img_metas']])
+            [each['can_bus'][0][-2] / np.pi * 180 for each in kwargs['img_metas']])
         grid_length_y = grid_length[0]
         grid_length_x = grid_length[1]
         translation_length = np.sqrt(delta_x ** 2 + delta_y ** 2)
@@ -146,7 +148,7 @@ class PerceptionTransformer(BaseModule):
             if self.rotate_prev_bev:
                 for i in range(bs):
                     # num_prev_bev = prev_bev.size(1)
-                    rotation_angle = kwargs['img_metas'][i]['can_bus'][-1]
+                    rotation_angle = kwargs['img_metas'][i]['can_bus'][0][-1]
                     tmp_prev_bev = prev_bev[:, i].reshape(
                         bev_h, bev_w, -1).permute(2, 0, 1)
                     tmp_prev_bev = rotate(tmp_prev_bev, rotation_angle,
@@ -157,7 +159,7 @@ class PerceptionTransformer(BaseModule):
 
         # add can bus signals
         can_bus = bev_queries.new_tensor(
-            [each['can_bus'] for each in kwargs['img_metas']])  # [:, :]
+            [each['can_bus'][0] for each in kwargs['img_metas']])  # [:, :]
         can_bus = self.can_bus_mlp(can_bus)[None, :, :]
         bev_queries = bev_queries + can_bus * self.use_can_bus
 
@@ -168,7 +170,8 @@ class PerceptionTransformer(BaseModule):
             spatial_shape = (h, w)
             feat = feat.flatten(3).permute(1, 0, 3, 2)
             if self.use_cams_embeds:
-                feat = feat + self.cams_embeds[:, None, None, :].to(feat.dtype)
+                #pdb.set_trace()
+                feat[:6] = feat[:6] + self.cams_embeds[:, None, None, :].to(feat.dtype)
             feat = feat + self.level_embeds[None,
                                             None, lvl:lvl + 1, :].to(feat.dtype)
             spatial_shapes.append(spatial_shape)
@@ -183,7 +186,7 @@ class PerceptionTransformer(BaseModule):
         feat_flatten = feat_flatten.permute(
             0, 2, 1, 3)  # (num_cam, H*W, bs, embed_dims)
 
-        bev_embed = self.encoder(
+        bev_embed,select_weight = self.encoder(
             bev_queries,
             feat_flatten,
             feat_flatten,
@@ -194,10 +197,11 @@ class PerceptionTransformer(BaseModule):
             level_start_index=level_start_index,
             prev_bev=prev_bev,
             shift=shift,
+            test=test,
             **kwargs
         )
 
-        return bev_embed
+        return bev_embed,select_weight
 
     @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'object_query_embed', 'prev_bev', 'bev_pos'))
     def forward(self,
@@ -211,6 +215,7 @@ class PerceptionTransformer(BaseModule):
                 reg_branches=None,
                 cls_branches=None,
                 prev_bev=None,
+                test=False,
                 **kwargs):
         """Forward function for `Detr3DTransformer`.
         Args:
@@ -249,7 +254,7 @@ class PerceptionTransformer(BaseModule):
                     otherwise None.
         """
 
-        bev_embed = self.get_bev_features(
+        bev_embed,select_weight = self.get_bev_features(
             mlvl_feats,
             bev_queries,
             bev_h,
@@ -257,6 +262,7 @@ class PerceptionTransformer(BaseModule):
             grid_length=grid_length,
             bev_pos=bev_pos,
             prev_bev=prev_bev,
+            test=test,
             **kwargs)  # bev_embed shape: bs, bev_h*bev_w, embed_dims
 
         bs = mlvl_feats[0].size(0)
@@ -286,4 +292,4 @@ class PerceptionTransformer(BaseModule):
 
         inter_references_out = inter_references
 
-        return bev_embed, inter_states, init_reference_out, inter_references_out
+        return bev_embed, inter_states, init_reference_out, inter_references_out,select_weight

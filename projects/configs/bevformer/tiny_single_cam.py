@@ -28,8 +28,8 @@ img_norm_cfg = dict(
 
 # For nuScenes we usually do 10-class detection
 class_names = [
-    'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
-    'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
+    'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier','bicycle',
+    'motorcycle', 'pedestrian', 'traffic_cone'
 ]
 
 input_modality = dict(
@@ -101,6 +101,7 @@ model = dict(
                         dict(
                             type='SpatialCrossAttention',
                             pc_range=point_cloud_range,
+                            use_weight=False,
                             deformable_attention=dict(
                                 type='MSDeformableAttention3D',
                                 embed_dims=_dim_,
@@ -169,8 +170,8 @@ model = dict(
             iou_cost=dict(type='IoUCost', weight=0.0), # Fake cost. This is just to make it compatible with DETR head.
             pc_range=point_cloud_range))))
 
-dataset_type = 'CustomNuScenesDataset'
-data_root = 'data/nuscenes/'
+dataset_type = 'CustomV2XSIMDataset'
+data_root = 'data/V2X-Sim-2.0/'
 file_client_args = dict(backend='disk')
 
 
@@ -213,7 +214,7 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
+        ann_file=data_root + 'v2x_sim_infos_train_padded_test.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -226,12 +227,12 @@ data = dict(
         box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
              data_root=data_root,
-             ann_file=data_root + 'nuscenes_infos_temporal_val.pkl',
+             ann_file=data_root + 'v2x_sim_infos_val_padded_test.pkl',
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
               data_root=data_root,
-              ann_file=data_root + 'nuscenes_infos_temporal_val.pkl',
+              ann_file=data_root + 'v2x_sim_infos_val_padded_test.pkl',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               classes=class_names, modality=input_modality),
     shuffler_sampler=dict(type='DistributedGroupSampler'),

@@ -5,6 +5,7 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import pdb
 from projects.mmdet3d_plugin.models.utils.bricks import run_time
 from projects.mmdet3d_plugin.models.utils.visual import save_tensor
 from .custom_base_transformer_layer import MyCustomBaseTransformerLayer
@@ -118,7 +119,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
 
         lidar2img = lidar2img.view(
             1, B, num_cam, 1, 4, 4).repeat(D, 1, 1, num_query, 1, 1)
-
+        #pdb.set_trace()
         reference_points_cam = torch.matmul(lidar2img.to(torch.float32),
                                             reference_points.to(torch.float32)).squeeze(-1)
         eps = 1e-5
@@ -142,7 +143,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
 
         reference_points_cam = reference_points_cam.permute(2, 1, 3, 0, 4)
         bev_mask = bev_mask.permute(2, 1, 3, 0, 4).squeeze(-1)
-
+        #在这里保存?8.9
         return reference_points_cam, bev_mask
 
     @auto_fp16()
@@ -159,6 +160,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 valid_ratios=None,
                 prev_bev=None,
                 shift=0.,
+                test=False,
                 **kwargs):
         """Forward function for `TransformerDecoder`.
         Args:
@@ -197,6 +199,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
         # (num_query, bs, embed_dims) -> (bs, num_query, embed_dims)
         bev_query = bev_query.permute(1, 0, 2)
         bev_pos = bev_pos.permute(1, 0, 2)
+        #pdb.set_trace()
         bs, len_bev, num_bev_level, _ = ref_2d.shape
         if prev_bev is not None:
             prev_bev = prev_bev.permute(1, 0, 2)
@@ -209,7 +212,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 bs*2, len_bev, num_bev_level, 2)
 
         for lid, layer in enumerate(self.layers):
-            output = layer(
+            output ,select_weight= layer(
                 bev_query,
                 key,
                 value,
@@ -224,6 +227,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 reference_points_cam=reference_points_cam,
                 bev_mask=bev_mask,
                 prev_bev=prev_bev,
+                test=test,
                 **kwargs)
 
             bev_query = output
@@ -233,7 +237,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
         if self.return_intermediate:
             return torch.stack(intermediate)
 
-        return output
+        return output,select_weight
 
 
 @TRANSFORMER_LAYER.register_module()
@@ -300,6 +304,7 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                 spatial_shapes=None,
                 level_start_index=None,
                 prev_bev=None,
+                test=False,
                 **kwargs):
         """Forward function for `TransformerDecoderLayer`.
 
@@ -377,13 +382,14 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
 
             # spaital cross attention
             elif layer == 'cross_attn':
-                query = self.attentions[attn_index](
+                query ,select_weight= self.attentions[attn_index](
                     query,
                     key,
                     value,
                     identity if self.pre_norm else None,
                     query_pos=query_pos,
                     key_pos=key_pos,
+                    bev_pos=bev_pos,
                     reference_points=ref_3d,
                     reference_points_cam=reference_points_cam,
                     mask=mask,
@@ -391,6 +397,7 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                     key_padding_mask=key_padding_mask,
                     spatial_shapes=spatial_shapes,
                     level_start_index=level_start_index,
+                    test=test,
                     **kwargs)
                 attn_index += 1
                 identity = query
@@ -400,4 +407,4 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                     query, identity if self.pre_norm else None)
                 ffn_index += 1
 
-        return query
+        return query,select_weight

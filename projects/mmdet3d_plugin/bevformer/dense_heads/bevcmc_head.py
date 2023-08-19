@@ -1,20 +1,21 @@
 # ---------------------------------------------
 # Copyright (c) OpenMMLab. All rights reserved.
 # ---------------------------------------------
-#  Modified by Zhiqi Li
+#  Modified by hsz
 # ---------------------------------------------
 
 import copy
 import pdb
+from mmdet.models.losses.smooth_l1_loss import l1_loss
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmcv.cnn import Linear, bias_init_with_prob
+from mmcv.cnn import Linear, bias_init_with_prob, build_conv_layer
 from mmcv.utils import TORCH_VERSION, digit_version
 
 from mmdet.core import (multi_apply, multi_apply, reduce_mean)
 from mmdet.models.utils.transformer import inverse_sigmoid
-from mmdet.models import HEADS
+from mmdet.models import HEADS,build_loss
 from mmdet.models.dense_heads import DETRHead
 from mmdet3d.core.bbox.coders import build_bbox_coder
 from projects.mmdet3d_plugin.core.bbox.util import normalize_bbox
@@ -28,7 +29,7 @@ from projects.mmdet3d_plugin.models.utils.visual import save_tensor
 
 
 @HEADS.register_module()
-class BEVFormerHead(DETRHead):
+class BEVCMCHead(DETRHead):
     """Head of Detr3D.
     Args:
         with_box_refine (bool): Whether to refine the reference points
@@ -50,6 +51,12 @@ class BEVFormerHead(DETRHead):
                  code_weights=None,
                  bev_h=30,
                  bev_w=30,
+                 pts_in_channels=512,
+                 loss_select=dict(type='L1Loss', loss_weight=0.25),
+                 loss_eff=dict(type='L1Loss', loss_weight=0.25),
+                 
+                 hidden_channel=128,
+                 bias='auto',
                  **kwargs):
 
         self.bev_h = bev_h
@@ -75,10 +82,27 @@ class BEVFormerHead(DETRHead):
         self.real_w = self.pc_range[3] - self.pc_range[0]
         self.real_h = self.pc_range[4] - self.pc_range[1]
         self.num_cls_fcs = num_cls_fcs - 1
-        super(BEVFormerHead, self).__init__(
+        super(BEVCMCHead, self).__init__(
             *args, transformer=transformer, **kwargs)
         self.code_weights = nn.Parameter(torch.tensor(
             self.code_weights, requires_grad=False), requires_grad=False)
+        self.pts_in_channels=pts_in_channels
+        self.single=False
+        
+        '''self.loss_select=build_loss(loss_select)
+        self.loss_eff=build_loss(loss_eff)'''
+        # a shared convolution
+        use_lidar=False
+        if use_lidar==True:
+            self.shared_conv = build_conv_layer(
+                dict(type='Conv2d'),
+                self.pts_in_channels,
+                hidden_channel,
+                kernel_size=3,
+                padding=1,
+                bias=bias,
+            )
+
 
     def _init_layers(self):
         """Initialize classification branch and regression branch of head."""
@@ -128,8 +152,8 @@ class BEVFormerHead(DETRHead):
             for m in self.cls_branches:
                 nn.init.constant_(m[-1].bias, bias_init)
 
-    @auto_fp16(apply_to=('mlvl_feats'))
-    def forward(self, mlvl_feats, img_metas, prev_bev=None,  only_bev=False,test=False):
+    @auto_fp16(apply_to=('mlvl_pts_feats', 'mlvl_img_feats'))
+    def forward(self, mlvl_pts_feats, mlvl_img_feats, img_metas, prev_bev=None,  only_bev=False):
         """Forward function.
         Args:
             mlvl_feats (tuple[Tensor]): Features from the upstream
@@ -146,8 +170,8 @@ class BEVFormerHead(DETRHead):
                 Shape [nb_dec, bs, num_query, 9].
         """
 
-        bs, num_cam, _, _, _ = mlvl_feats[0].shape
-        dtype = mlvl_feats[0].dtype
+        bs, num_cams_all, _, _, _ = mlvl_img_feats[0].shape
+        dtype = mlvl_img_feats[0].dtype
         object_query_embeds = self.query_embedding.weight.to(dtype)
         bev_queries = self.bev_embedding.weight.to(dtype)
 
@@ -155,9 +179,24 @@ class BEVFormerHead(DETRHead):
                                device=bev_queries.device).to(dtype)
         bev_pos = self.positional_encoding(bev_mask).to(dtype)
         #pdb.set_trace()
+        num_cars=int(num_cams_all/6)
+        use_lidar=False
+        if use_lidar==True:
+            pts_feats_bev=[]
+            
+            for car in range(num_cars):
+                pts_feats_bev.append(self.shared_conv(mlvl_pts_feats[car]))
+            pts_feats_bev=torch.stack(pts_feats_bev)
+        else:
+            pts_feats_bev=None
+        #pdb.set_trace()
+        # mlvl_img_feats list [0]  torch.Size([b, num_cams_all, emb dim, h, w])
+        # pts_feats_bev [num_cars, b, 256, 128, 128])
         if only_bev:  # only use encoder to obtain BEV features, TODO: refine the workaround
             return self.transformer.get_bev_features(
-                mlvl_feats,
+                pts_feats_bev,
+                mlvl_img_feats,
+
                 bev_queries,
                 self.bev_h,
                 self.bev_w,
@@ -166,10 +205,12 @@ class BEVFormerHead(DETRHead):
                 bev_pos=bev_pos,
                 img_metas=img_metas,
                 prev_bev=prev_bev,
-            )[0]
+            )
         else:
             outputs = self.transformer(
-                mlvl_feats,
+                pts_feats_bev,
+                mlvl_img_feats,
+
                 bev_queries,
                 object_query_embeds,
                 self.bev_h,
@@ -180,11 +221,10 @@ class BEVFormerHead(DETRHead):
                 reg_branches=self.reg_branches if self.with_box_refine else None,  # noqa:E501
                 cls_branches=self.cls_branches if self.as_two_stage else None,
                 img_metas=img_metas,
-                prev_bev=prev_bev,
-                test=test,
+                prev_bev=prev_bev
         )
 
-        bev_embed, hs, init_reference, inter_references,select_weight = outputs
+        bev_embed, hs, init_reference, inter_references= outputs
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []
         outputs_coords = []
@@ -224,9 +264,8 @@ class BEVFormerHead(DETRHead):
             'all_bbox_preds': outputs_coords,
             'enc_cls_scores': None,
             'enc_bbox_preds': None,
-            #'select_weight' :select_weight ,
-        },select_weight
-        #print(outputs_classes,outputs_coords)
+            #'comm_scores':score_all,
+        }
 
         return outs
 
@@ -448,12 +487,12 @@ class BEVFormerHead(DETRHead):
             f'{self.__class__.__name__} only supports ' \
             f'for gt_bboxes_ignore setting to None.'
 
-        all_cls_scores = preds_dicts[0]['all_cls_scores']
-        all_bbox_preds = preds_dicts[0]['all_bbox_preds']
-        enc_cls_scores = preds_dicts[0]['enc_cls_scores']
-        enc_bbox_preds = preds_dicts[0]['enc_bbox_preds']
-        select_weights=preds_dicts[1]
-
+        all_cls_scores = preds_dicts['all_cls_scores']
+        all_bbox_preds = preds_dicts['all_bbox_preds']
+        enc_cls_scores = preds_dicts['enc_cls_scores']
+        enc_bbox_preds = preds_dicts['enc_bbox_preds']
+        #comm_scores=preds_dicts['comm_scores']
+        
         num_dec_layers = len(all_cls_scores)
         device = gt_labels_list[0].device
 
@@ -496,9 +535,22 @@ class BEVFormerHead(DETRHead):
             loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
             loss_dict[f'd{num_dec_layer}.loss_bbox'] = loss_bbox_i
             num_dec_layer += 1
-        #loss_dict['info']=select_weights
-        #print(select_weights)
-        #pdb.set_trace()
+            
+         
+        #pdb.set_trace() 
+        #comm_scores [num_layers,rounds-1,(attn_output_score,norm_score,selection_mask),bs,num_cars+num_cams]
+        '''if (comm_scores[0]!=torch.tensor([-1]).cuda()).all():
+            attn_output_score=comm_scores[:,:,0]
+            norm_score=comm_scores[:,:,1]
+            selection_mask=comm_scores[:,:,2]
+            loss_ef=self.loss_select(attn_output_score,torch.zeros_like(attn_output_score))
+            loss_sel=self.loss_eff(norm_score,selection_mask)
+            if digit_version(TORCH_VERSION) >= digit_version('1.8'):
+                loss_sel = torch.nan_to_num(loss_sel)
+                loss_ef = torch.nan_to_num(loss_ef)
+            loss_dict['loss_select']=loss_sel
+            loss_dict['loss_efficiency']=loss_ef'''
+        #  
         return loss_dict
 
     @force_fp32(apply_to=('preds_dicts'))
@@ -510,7 +562,7 @@ class BEVFormerHead(DETRHead):
         Returns:
             list[dict]: Decoded bbox, scores and labels after nms.
         """
-
+        #pdb.set_trace()
         preds_dicts = self.bbox_coder.decode(preds_dicts)
 
         num_samples = len(preds_dicts)
