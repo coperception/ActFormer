@@ -5,6 +5,7 @@
 # ---------------------------------------------
 from data_converter.create_gt_database import create_groundtruth_database
 from data_converter import nuscenes_converter as nuscenes_converter
+from data_converter import v2x_sim_converter as v2x_sim_converter
 from data_converter import lyft_converter as lyft_converter
 from data_converter import kitti_converter as kitti
 from data_converter import indoor_converter as indoor
@@ -88,6 +89,51 @@ def nuscenes_data_prep(root_path,
             root_path, info_val_path, version=version)
         # create_groundtruth_database(dataset_name, root_path, info_prefix,
         #                             f'{out_dir}/{info_prefix}_infos_train.pkl')
+
+
+def v2x_sim_data_prep(root_path,
+                      can_bus_root_path,
+                      info_prefix,
+                      version,
+                      dataset_name,
+                      out_dir,
+                      max_sweeps=10):
+    """Prepare data related to nuScenes dataset.
+
+    Related data consists of '.pkl' files recording basic infos,
+    2D annotations and groundtruth database.
+
+    Args:
+        root_path (str): Path of dataset root.
+        info_prefix (str): The prefix of info filenames.
+        version (str): Dataset version.
+        dataset_name (str): The dataset class name.
+        out_dir (str): Output directory of the groundtruth database info.
+        max_sweeps (int): Number of input consecutive frames. Default: 10
+    """
+    v2x_sim_converter.create_v2x_sim_infos(
+        root_path, out_dir, info_prefix, version=version, max_sweeps=max_sweeps)
+
+    if version == 'v1.0-test':
+        info_test_path = osp.join(
+            out_dir, f'{info_prefix}_infos_temporal_test.pkl')
+        """v2x_sim_converter.export_2d_annotation(
+            root_path, info_test_path, version=version)"""
+        
+    else:
+        info_train_path = osp.join(
+            out_dir, f'{info_prefix}_infos_temporal_train.pkl')
+        info_val_path = osp.join(
+            out_dir, f'{info_prefix}_infos_temporal_val.pkl')
+        """v2x_sim_converter.export_2d_annotation(
+            root_path, info_train_path, version=version)
+        v2x_sim_converter.export_2d_annotation(
+            root_path, info_val_path, version=version)
+        
+        """ 
+    
+    # create_groundtruth_database(dataset_name, root_path, info_prefix,
+    #                             f'{out_dir}/{info_prefix}_infos_train.pkl')
 
 
 def lyft_data_prep(root_path, info_prefix, version, max_sweeps=10):
@@ -262,6 +308,29 @@ if __name__ == '__main__':
             info_prefix=args.extra_tag,
             version=train_version,
             dataset_name='NuScenesDataset',
+            out_dir=args.out_dir,
+            max_sweeps=args.max_sweeps)
+
+    elif args.dataset == 'v2x_sim' and args.version != 'v2.0-mini':
+        train_version = f'{args.version}'
+        
+        v2x_sim_data_prep(
+            root_path=args.root_path,
+            can_bus_root_path=0,
+            info_prefix=args.extra_tag,
+            version=train_version,
+            dataset_name='V2XSIMDataset',
+            out_dir=args.out_dir,
+            max_sweeps=args.max_sweeps)
+        
+    elif args.dataset == 'v2x_sim' and args.version == 'v2.0-mini':
+        train_version = f'{args.version}'
+        v2x_sim_data_prep(
+            root_path=args.root_path,
+            can_bus_root_path=0,
+            info_prefix=args.extra_tag,
+            version=train_version,
+            dataset_name='V2XSIMDataset',
             out_dir=args.out_dir,
             max_sweeps=args.max_sweeps)
     elif args.dataset == 'lyft':

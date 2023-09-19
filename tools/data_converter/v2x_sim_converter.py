@@ -360,8 +360,7 @@ def _fill_trainval_infos(nusc,
                 # v2x
                 valid_flag = np.array(
                     [
-                    
-                    1
+                    anno['num_lidar_pts']>0
                     for anno in annotations],
                     dtype=bool).reshape(-1)
                 # convert velo from global to lidar

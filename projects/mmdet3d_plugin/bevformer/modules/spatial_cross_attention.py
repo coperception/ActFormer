@@ -70,16 +70,25 @@ class SpatialCrossAttention(BaseModule):
         self.output_proj = nn.Linear(embed_dims, embed_dims)
         self.batch_first = batch_first
         self.use_weight = use_weight
+        self.use_linear=True
         if self.use_weight:
             self.pose_embedding = nn.Sequential(
                 nn.Linear(16,embed_dims),
                 #nn.Sigmoid(),
             )
-            self.select_offsets=nn.Sequential(
-                nn.Linear(embed_dims+embed_dims, 128),
-                nn.Linear(128,1),
-                nn.Sigmoid(),
-            )
+            if self.use_linear:
+                self.select_offsets=nn.Sequential(
+                    nn.Linear(embed_dims+embed_dims, 128),
+                    nn.Linear(128,1),
+                    nn.Sigmoid(),
+                )
+            else:
+                self.select_offsets= nn.Sequential(
+                    nn.Conv2d(in_channels=embed_dims*2, out_channels=128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+                    nn.Linear(128,1),
+                    nn.Sigmoid(),
+                    )
+
         self.init_weight()
 
     def init_weight(self):
@@ -158,16 +167,27 @@ class SpatialCrossAttention(BaseModule):
         
         lidar2img = reference_points.new_tensor(lidar2img)
         num_cams_all=lidar2img .shape[0]
-        '''if num_cams_all!=18:
-            print(num_cams_all)'''
+        
         if self.use_weight:
             
             position_embed = self.pose_embedding(lidar2img.view(bs*num_cams_all,1,16)).repeat(1,num_query,1)
             
             # Concatenate position embeddings with input data
             input_with_position = torch.cat([(query+bev_pos).repeat(bs*num_cams_all,1,1), 10*F.normalize(position_embed,dim=2)], dim=-1)
-            #8.7 try normalize dim=2
+            if self.use_linear:
+                select_weight=self.select_offsets(input_with_position)
             
+            #9.7 try conv
+            else:
+                input_size=input_with_position.size()
+                h_sqrt = int(input_size[1] ** 0.5)
+                input_with_position=input_with_position.view(input_size[0], input_size[2], h_sqrt, h_sqrt)
+                
+                output_tensor =self.select_offsets(input_with_position)
+                
+                output_size = output_tensor.size()
+                #pdb.set_trace()
+                select_weight = output_tensor.view(output_size[0], output_size[2]*output_size[3], output_size[1])
 
             # 8.12 3 tests for normalization:
             # 1 clamp
@@ -180,32 +200,31 @@ class SpatialCrossAttention(BaseModule):
             # 4 conv for concated feature: for neighbor bev infomation
             #clamped_tensor = torch.clamp(tensor, min=-1, max=1)
 
-            select_weight=self.select_offsets(input_with_position)
+            
             #pdb.set_trace()
         else:
             select_weight=  torch.ones([bs*num_cams_all,num_query,1]).cuda()
             #attention_weights=torch.mul(select_weight.unsqueeze(-1),attention_weights)
         #pdb.set_trace()
-        
-            
+
         D = reference_points_cam.size(3)
         indexes = []
         for i, mask_per_img in enumerate(bev_mask):
             index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1)
             indexes.append(index_query_per_img)
         max_len = max([len(each) for each in indexes])
-        #print('origin',max_len)
+        #print('\norigin',[len(each) for each in indexes])
         #print([len(each) f,or each in indexes],sum([len(each) for each in indexes]))
         original_num_query=sum([len(each) for each in indexes])
         if self.use_weight and test:
             indexes = []
-            select_weight_as_mask=select_weight>1e-1
+            select_weight_as_mask=select_weight>1e-2
             for i, mask_per_img in enumerate(bev_mask):#12,1,2500,4
                 mask_per_img=mask_per_img *select_weight_as_mask[i]
                 index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1)
                 indexes.append(index_query_per_img)
             max_len = max([len(each) for each in indexes])
-            #print('new',max_len)
+            #print('\nnew',[len(each) for each in indexes])
             #print([len(each) for each in indexes],sum([len(each) for each in indexes]))
             new_num_query=sum([len(each) for each in indexes])
             #print(new_num_query/original_num_query)
@@ -260,7 +279,10 @@ class SpatialCrossAttention(BaseModule):
             #num_cams, l, bs, embed_dims = key.shape
             num_cams=num_cams_all
             max_len1 = max([len(each) for each in indexes][:6])
-            max_len2 = max([len(each) for each in indexes][6:])
+            if num_cams>6:
+                max_len2 = max([len(each) for each in indexes][6:])
+            #print([len(each) for each in indexes])
+            #print(max_len1, max_len2)
             #print([len(each) for each in indexes])
             # each camera only interacts with its corresponding BEV queries. This step can  greatly save GPU memory.
             queries_rebatch = query.new_zeros(
@@ -281,26 +303,27 @@ class SpatialCrossAttention(BaseModule):
                 queries1 = self.deformable_attention(query=queries_rebatch.view(bs*6, max_len1, self.embed_dims), key=key[:bs *6], value=value[:bs *6],
                                             reference_points=reference_points_rebatch.view(bs*6, max_len1, D, 2), spatial_shapes=spatial_shapes,
                                             level_start_index=level_start_index,select_weight=select_weight_rebatch.view(bs*6, max_len1,1),**kwargs).view(bs, 6, max_len1, self.embed_dims)
-            
-            queries_rebatch = query.new_zeros(
-                [bs, num_cams-6, max_len2, self.embed_dims])
-            reference_points_rebatch = reference_points_cam.new_zeros(
-                [bs, num_cams-6, max_len2, D, 2])
-            select_weight_rebatch =select_weight.new_zeros([bs,num_cams-6, max_len2, 1])
-                #print(select_weight_rebatch.shape)
-            for j in range(bs):
-                for i, reference_points_per_img in enumerate(reference_points_cam[6:]):   
-                    index_query_per_img = indexes[i+6]
-                    queries_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
-                    reference_points_rebatch[j, i, :len(index_query_per_img)] = reference_points_per_img[j, index_query_per_img]
-                    #pdb.set_trace()
-                    
-                    select_weight_rebatch[j, i, :len(index_query_per_img)]=select_weight[(j+1)*i, index_query_per_img]
-                    weight_mean+=select_weight[(j+1)*i, index_query_per_img].sum()
-                    weight_count  +=select_weight[(j+1)*i, index_query_per_img].shape[0]
-                queries2= self.deformable_attention(query=queries_rebatch.view(bs*(num_cams-6), max_len2, self.embed_dims), key=key[:bs *(num_cams-6)], value=value[:bs *(num_cams-6)],
-                                            reference_points=reference_points_rebatch.view(bs*(num_cams-6), max_len2, D, 2), spatial_shapes=spatial_shapes,
-                                            level_start_index=level_start_index,select_weight=select_weight_rebatch.view(bs*(num_cams-6), max_len2,1),**kwargs).view(bs,  num_cams-6, max_len2, self.embed_dims)
+            if num_cams>6:
+                queries_rebatch = query.new_zeros(
+                    [bs, num_cams-6, max_len2, self.embed_dims])
+                reference_points_rebatch = reference_points_cam.new_zeros(
+                    [bs, num_cams-6, max_len2, D, 2])
+                select_weight_rebatch =select_weight.new_zeros([bs,num_cams-6, max_len2, 1])
+                    #print(select_weight_rebatch.shape)
+                for j in range(bs):
+                    for i, reference_points_per_img in enumerate(reference_points_cam[6:]):   
+                        index_query_per_img = indexes[i+6]
+                        queries_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+                        reference_points_rebatch[j, i, :len(index_query_per_img)] = reference_points_per_img[j, index_query_per_img]
+                        #pdb.set_trace()
+                        
+                        select_weight_rebatch[j, i, :len(index_query_per_img)]=select_weight[(j+1)*(i+6), index_query_per_img]
+                        weight_mean+=select_weight[(j+1)*(i+6), index_query_per_img].sum()
+                        weight_count  +=select_weight[(j+1)*(i+6), index_query_per_img].shape[0]
+                    queries2= self.deformable_attention(query=queries_rebatch.view(bs*(num_cams-6), max_len2, self.embed_dims), key=key[bs *6:], value=value[bs *6:],
+                                                reference_points=reference_points_rebatch.view(bs*(num_cams-6), max_len2, D, 2), spatial_shapes=spatial_shapes,
+                                                level_start_index=level_start_index,select_weight=select_weight_rebatch.view(bs*(num_cams-6), max_len2,1),**kwargs).view(bs,  num_cams-6, max_len2, self.embed_dims)
+                
         if  self.use_weight and test:
             for j in range(bs):
                 for i, index_query_per_img in enumerate(indexes):

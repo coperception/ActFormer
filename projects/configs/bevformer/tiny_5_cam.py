@@ -53,7 +53,7 @@ model = dict(
     video_test_mode=True,
     pretrained=dict(img='torchvision://resnet50'),
     padding=True,
-    num_cams=24,
+    num_cams=30,
     img_backbone=dict(
         type='ResNet',
         depth=50,
@@ -104,7 +104,7 @@ model = dict(
                         dict(
                             type='SpatialCrossAttention',
                             pc_range=point_cloud_range,
-                            use_weight=True,
+                            use_weight=False,
                             deformable_attention=dict(
                                 type='MSDeformableAttention3D',
                                 embed_dims=_dim_,
@@ -217,7 +217,7 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'v2x_sim_infos_train_4.pkl',
+        ann_file=data_root + 'v2x_sim_infos_train_5.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
@@ -230,12 +230,12 @@ data = dict(
         box_type_3d='LiDAR'),
     val=dict(type=dataset_type,
              data_root=data_root,
-             ann_file=data_root + 'v2x_sim_infos_val_padded_test.pkl',
+             ann_file=data_root + 'v2x_sim_infos_val_5.pkl',
              pipeline=test_pipeline,  bev_size=(bev_h_, bev_w_),
              classes=class_names, modality=input_modality, samples_per_gpu=1),
     test=dict(type=dataset_type,
               data_root=data_root,
-              ann_file=data_root + 'v2x_sim_infos_val_padded_test.pkl',
+              ann_file=data_root + 'v2x_sim_infos_val_5.pkl',
               pipeline=test_pipeline, bev_size=(bev_h_, bev_w_),
               classes=class_names, modality=input_modality),
     shuffler_sampler=dict(type='DistributedGroupSampler'),

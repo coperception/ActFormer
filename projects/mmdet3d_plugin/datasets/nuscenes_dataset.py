@@ -9,7 +9,7 @@ from mmdet.datasets import DATASETS
 import torch
 import numpy as np
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
-from .nuscnes_eval import NuScenesEval_custom
+from .nuscenes_eval import NuScenesEval_custom
 from projects.mmdet3d_plugin.models.utils.visual import save_tensor
 from mmcv.parallel import DataContainer as DC
 import random

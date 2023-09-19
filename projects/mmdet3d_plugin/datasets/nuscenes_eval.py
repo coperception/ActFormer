@@ -2,7 +2,6 @@ import argparse
 import copy
 import json
 import os
-import pdb
 import time
 from typing import Tuple, Dict, Any
 import torch
@@ -23,7 +22,7 @@ from nuscenes.eval.tracking.data_classes import TrackingBox
 from nuscenes.utils.data_classes import Box
 from nuscenes.utils.geometry_utils import points_in_box
 from nuscenes.utils.splits import create_splits_scenes
-from nuscenes.eval.common.loaders import load_prediction, filter_eval_boxes
+from nuscenes.eval.common.loaders import load_prediction, add_center_dist, filter_eval_boxes
 import tqdm
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility, transform_matrix
 from torchvision.transforms.functional import rotate
@@ -257,34 +256,24 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
         attribute_map = {a['token']: a['name'] for a in nusc.attribute}
 
     if verbose:
-        print('Loading annotations for {} split from V2X-Sim version: {}'.format(eval_split, nusc.version))
+        print('Loading annotations for {} split from nuScenes version: {}'.format(eval_split, nusc.version))
     # Read out all sample_tokens in DB.
     sample_tokens_all = [s['token'] for s in nusc.sample]
     assert len(sample_tokens_all) > 0, "Error: Database has no samples!"
 
     # Only keep samples from this split.
-    v2x_split = {"train": ['scene_1','scene_2','scene_3','scene_4','scene_5','scene_6','scene_7','scene_8','scene_9','scene_10',
-                           'scene_11','scene_12','scene_13','scene_14','scene_15','scene_16','scene_17','scene_18','scene_19','scene_20',
-                           'scene_21','scene_22','scene_23','scene_24','scene_25','scene_26','scene_27','scene_28','scene_29','scene_30',
-                           'scene_31','scene_32','scene_33','scene_34','scene_35','scene_36','scene_37','scene_38','scene_39','scene_40',
-                           'scene_41','scene_42','scene_43','scene_44','scene_45','scene_46','scene_47','scene_48','scene_49','scene_50',
-                           'scene_51','scene_52','scene_53','scene_54','scene_55','scene_56','scene_57','scene_58','scene_59','scene_60',
-                           'scene_61','scene_62','scene_63','scene_64','scene_65','scene_66','scene_67','scene_68','scene_69','scene_70',
-                           'scene_71','scene_72','scene_73','scene_74','scene_75','scene_76','scene_77','scene_78','scene_79','scene_80'], 
-                 "val": ['scene_81','scene_82','scene_83','scene_84','scene_85','scene_86','scene_87','scene_88','scene_89','scene_90'], 
-                 #"val": ['scene_5'],
-                 "test": ['scene_91','scene_92','scene_93','scene_94','scene_95','scene_96','scene_97','scene_98','scene_99','scene_100'],
-                 "mini_train": ['scene_5'], "mini_val": ['scene_5']}
+    splits = create_splits_scenes()
+
     # Check compatibility of split with nusc_version.
     version = nusc.version
     if eval_split in {'train', 'val', 'train_detect', 'train_track'}:
-        assert version.endswith('v1.0-mini')  , \
+        assert version.endswith('trainval'), \
             'Error: Requested split {} which is not compatible with NuScenes version {}'.format(eval_split, version)
     elif eval_split in {'mini_train', 'mini_val'}:
         assert version.endswith('mini'), \
             'Error: Requested split {} which is not compatible with NuScenes version {}'.format(eval_split, version)
     elif eval_split == 'test':
-        assert version.endswith('mini'), \
+        assert version.endswith('test'), \
             'Error: Requested split {} which is not compatible with NuScenes version {}'.format(eval_split, version)
     else:
         raise ValueError('Error: Requested split {} which this function cannot map to the correct NuScenes version.'
@@ -309,7 +298,7 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
     for sample_token in sample_tokens_all:
         scene_token = nusc.get('sample', sample_token)['scene_token']
         scene_record = nusc.get('scene', scene_token)
-        if scene_record['name'] in v2x_split[eval_split]:
+        if scene_record['name'] in splits[eval_split]:
             sample_tokens.append(sample_token)
 
     all_annotations = EvalBoxes()
@@ -340,7 +329,7 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
                     attribute_name = attribute_map[attr_tokens[0]]
                 else:
                     raise Exception('Error: GT annotations must not have more than one attribute!')
-                #print(sample_annotation['num_lidar_pts'])
+
                 sample_boxes.append(
                     box_cls(
                         token=sample_annotation_token,
@@ -348,9 +337,8 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
                         translation=sample_annotation['translation'],
                         size=sample_annotation['size'],
                         rotation=sample_annotation['rotation'],
-                        #velocity=[0,0],#v2x
                         velocity=nusc.box_velocity(sample_annotation['token'])[:2],
-                        num_pts=sample_annotation['num_lidar_pts'][1] ,#v2x change because sample_annotation['num_lidar_pts'] is a list
+                        num_pts=sample_annotation['num_lidar_pts'] + sample_annotation['num_radar_pts'],
                         detection_name=detection_name,
                         detection_score=-1.0,  # GT samples do not have a score.
                         attribute_name=attribute_name,
@@ -516,7 +504,7 @@ def filter_eval_boxes_by_overlap(nusc: NuScenes,
     return eval_boxes
 
 
-class V2XSIMEval_custom(NuScenesEval):
+class NuScenesEval_custom(NuScenesEval):
     """
     Dummy class for backward-compatibility. Same as DetectionEval.
     """
@@ -567,38 +555,11 @@ class V2XSIMEval_custom(NuScenesEval):
         self.pred_boxes, self.meta = load_prediction(self.result_path, self.cfg.max_boxes_per_sample, DetectionBox,
                                                      verbose=verbose)
         self.gt_boxes = load_gt(self.nusc, self.eval_set, DetectionBox_modified, verbose=verbose)
-        #pdb.set_trace()
-        print(len(set(self.pred_boxes.sample_tokens)),len( set(self.gt_boxes.sample_tokens)))
+
         assert set(self.pred_boxes.sample_tokens) == set(self.gt_boxes.sample_tokens), \
             "Samples in split doesn't match samples in predictions."
 
-        # Add center distances. 
-        def add_center_dist(nusc: NuScenes,
-                    eval_boxes: EvalBoxes):
-            #need change here if  multi car
-            """
-            Adds the cylindrical (xy) center distance from ego vehicle to each box.
-            :param nusc: The NuScenes instance.
-            :param eval_boxes: A set of boxes, either GT or predictions.
-            :return: eval_boxes augmented with center distances.
-            """
-            for sample_token in eval_boxes.sample_tokens:
-                sample_rec = nusc.get('sample', sample_token)
-                sd_record = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP_id_1'])
-                pose_record = nusc.get('ego_pose', sd_record['ego_pose_token'])
-
-                for box in eval_boxes[sample_token]:
-                    # Both boxes and ego pose are given in global coord system, so distance can be calculated directly.
-                    # Note that the z component of the ego pose is 0.
-                    ego_translation = (box.translation[0] - pose_record['translation'][0],
-                                    box.translation[1] - pose_record['translation'][1],
-                                    box.translation[2] - pose_record['translation'][2])
-                    if isinstance(box, DetectionBox) or isinstance(box, TrackingBox):
-                        box.ego_translation = ego_translation
-                    else:
-                        raise NotImplementedError
-
-            return eval_boxes
+        # Add center distances.
         self.pred_boxes = add_center_dist(nusc, self.pred_boxes)
         self.gt_boxes = add_center_dist(nusc, self.gt_boxes)
 
@@ -779,7 +740,7 @@ if __name__ == "__main__":
             cfg_ = DetectionConfig.deserialize(json.load(_f))
 
     nusc_ = NuScenes(version=version_, verbose=verbose_, dataroot=dataroot_)
-    nusc_eval = V2XSIMEval_custom(nusc_, config=cfg_, result_path=result_path_, eval_set=eval_set_,
+    nusc_eval = NuScenesEval_custom(nusc_, config=cfg_, result_path=result_path_, eval_set=eval_set_,
                                     output_dir=output_dir_, verbose=verbose_)
     for vis in ['1', '2', '3', '4']:
         nusc_eval.update_gt(type_='vis', visibility=vis)

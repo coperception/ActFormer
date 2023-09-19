@@ -14,7 +14,7 @@ from mmdet.datasets import DATASETS
 import torch
 
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
-from .nuscnes_eval import NuScenesEval_custom
+from .nuscenes_eval import NuScenesEval_custom
 from .v2x_sim_eval import V2XSIMEval_custom
 from projects.mmdet3d_plugin.models.utils.visual import save_tensor
 from mmcv.parallel import DataContainer as DC
@@ -105,7 +105,7 @@ class CustomV2XSIMDataset(NuScenesDataset):
                 #self.is_single=False
                 
                 
-                padded_imgs_list.append(torch.cat((img,torch.zeros([24-num_cams,N,H,W])),dim=0))
+                padded_imgs_list.append(torch.cat((img,torch.zeros([30-num_cams,N,H,W])),dim=0))
             else:
                 self.is_single=True
         #print(self.is_single,[len(each ) for each in imgs_list],[len(each ) for each in padded_imgs_list])
