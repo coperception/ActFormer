@@ -14,5 +14,5 @@ In this work, we aim to address scalable camera-based collaborative perception w
 
 
 # Methods
-![method](figs/fig.png "model arch")
+![method](figs/method.png "model arch")
 
