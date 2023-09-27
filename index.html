@@ -327,23 +327,22 @@
                     <h2 class="title is-3">Contribution</h2>
                     <div class="content has-text-justified">
                         <li>
-                            We propose a brand-new task-agnostic collaborative perception framework based on multi-robot
-                            scene completion, <b>decoupling the collaboration learning from downstream tasks</b>.
+                            We conceptualize a scalable and efficient collaborative perception framework that can
+                            actively and intelligently identify the most relevant sensory measurements based on spatial
+                            knowledge, without relying on the sensory measurements themselves.
                         </li>
                         <li>
-                            We propose <b>asynchronous training and synchronous inference</b> with a shared autoencoder
-                            to solve the proposed task, eliminating the need for synchronous data for collaboration
-                            learning.
+                            We ground the concept of the scalable collaborative perception with a Transformer,
+                            \textit{i.e.}, \textit{ActFormer}, which uses a group of 3D-to-2D BEV queries to actively
+                            and efficiently aggregate the features from multi-robot multi-camera input, only relying on
+                            pose information.
                         </li>
                         <li>
-                            We develop a novel spatiotemporal autoencoder (STAR) that reconstructs scenes based on
-                            temporally mixed information. It <b>amortizes the spatial communication volume over time</b>
-                            to improve the performance-bandwidth trade-off.
+                            We conduct comprehensive experiments in the task of collaborative object detection to verify
+                            the effectiveness and efficiency of our ActFormer.</b>.
+
                         </li>
-                        <li>
-                            We conduct extensive experiments to verify our method's effectiveness for scene completion
-                            and downstream perception in autonomous driving scenarios.
-                        </li>
+
                     </div>
                 </div>
             </div>
@@ -370,6 +369,16 @@
                                 inference</strong> is illustrated on the left. The <i>sender</i> transmit encoded
                             representations to the <i>receiver</i>. The <i>receiver</i> uses a mixture of
                             spatio-temporal tokens to complete the scene observation.
+
+                            Our motivation stems from the idea that how vehicles collaboratively perceive should be
+                            closely related to their relative poses. Different camera poses result in varying
+                            viewpoints, each capturing unique information. However, conventional collaborative methods
+                            often treat all viewpoints equally, overlooking the fact that these camera perspectives
+                            offer different insights into the environment—some unique, some overlapping, and some
+                            redundant. Consequently, the ego vehicle may not fully capitalize on the diverse
+                            perspectives available, leading to indiscriminate collaboration that generates excessive
+                            communication and computation. Actually, communication may not be necessary when some
+                            partners share very similar observations.
                         </p>
                     </div>
                 </div>
