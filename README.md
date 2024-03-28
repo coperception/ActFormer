@@ -21,10 +21,16 @@ In this work, we aim to address scalable camera-based collaborative perception w
 
 same as [BEVFormer](https://github.com/zhiqi-li/BEVFormer)
 
+See details in [Install requirements](docs/install.md)
+
 ## Data
 
 Download here [V2X-Sim](https://ai4ce.github.io/V2X-Sim/)
 
+See details in [Data Access](docs/prepare+dataset.md)
+
 ## Train & Test
 
 see [train.py](tools/dist_train.sh) and [test.py](tools/dist_test.sh)
+
+See details in [Data Access](docs/prepare+dataset.md)
