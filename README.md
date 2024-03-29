@@ -27,10 +27,10 @@ See details in [Install requirements](docs/install.md)
 
 Download here [V2X-Sim](https://ai4ce.github.io/V2X-Sim/)
 
-See details in [Data Access](docs/prepare+dataset.md)
+See details in [Data Access](docs/prepare_dataset.md)
 
 ## Train & Test
 
 see [train.py](tools/dist_train.sh) and [test.py](tools/dist_test.sh)
 
-See details in [Data Access](docs/prepare+dataset.md)
+See train,test and visual details in [Start](docs/getting_started.md)
