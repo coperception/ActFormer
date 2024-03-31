@@ -25,7 +25,9 @@ See details in [Install requirements](docs/install.md)
 
 ## Data
 
-Download here [V2X-Sim](https://ai4ce.github.io/V2X-Sim/)
+The experiments are completed in nuscene file format.
+
+Download [V2X-Sim 2.0](https://ai4ce.github.io/V2X-Sim/)
 
 See details in [Data Access](docs/prepare_dataset.md)
 
