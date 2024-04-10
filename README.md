@@ -35,4 +35,4 @@ See details in [Data Access](docs/prepare_dataset.md)
 
 see [train.py](tools/dist_train.sh) and [test.py](tools/dist_test.sh)
 
-See train,test and visual details in [Start](docs/getting_started.md)
+See train, test and visual details in [Start](docs/getting_started.md)
