@@ -4,7 +4,8 @@
 
 </div>
 
-Official code for the paper "ActFormer: Scalable Collaborative Perception via Active Queries", accepted by *2024 IEEE International Conference on Robotics and Automation*. **Currently the code is a raw version, will be updated ASAP**. If you have any inquiries, feel free to contact <suozhi.huang@gmail.com>
+Official code for the paper [ActFormer: Scalable Collaborative Perception via Active Queries](
+https://doi.org/10.48550/arXiv.2403.04968), accepted by *2024 IEEE International Conference on Robotics and Automation*. **Currently the code is a raw version, will be updated ASAP**. If you have any inquiries, feel free to contact <suozhi.huang@gmail.com>
 
 # Abstract
 
