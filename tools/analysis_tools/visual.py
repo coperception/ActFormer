@@ -1,6 +1,6 @@
 # Based on https://github.com/nutonomy/nuscenes-devkit
 # ---------------------------------------------
-#  Modified by Zhiqi Li
+#  Modified by Huang Suozhi
 # ---------------------------------------------
 
 import mmcv
